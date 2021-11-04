@@ -38,6 +38,8 @@ GantryState gs = {
   0
 };
 
+int startTime = millis();
+
 void setup() {
   // TODO: zero the motors
   
@@ -111,40 +113,77 @@ void moveGantry(char direction) {
   // change gs (GantryState) given direction
   switch(direction) {
     case 'f': // forward
+      gs.beltSpeed = c.beltSpeed;
+      gs.rotateSpeed = c.rotateSpeed;
       gs.duration = timeToCross;
       break;
     case 'r': // reverse
+      gs.beltSpeed = -c.beltSpeed;
+      gs.rotateSpeed = c.rotateSpeed;
       gs.duration = timeToCross;
       break;
     case 'e': // end
+      gs.beltSpeed = 0;
+      gs.rotateSpeed = c.rotateSpeed;
       gs.duration = timeAtEnd;
       break;
     default:
       break;
   }
+  
   // drive motors at altered gs
   driveMotors();
+  
+  return;
+}
+
+void printElapsedTime() {
+  Serial.print("Elapsed time: ");
+  int msPast = millis() - startTime;
+  int msRemainder = msPast % 1000;
+  int sPast = msPast / 1000;
+  int sRemainder = sPast % 60;
+  int mPast = sPast / 60;
+  Serial.print(mPast);
+  Serial.print("m ");
+  Serial.print(sRemainder);
+  Serial.print(".");
+  Serial.print(msRemainder);
+  Serial.println("s");
+  return;
 }
 
 
 void loop() {
   // Get job details and store speeds
   // getConfig();
-
+  
   for(int i = 0; i < c.revolutions; i++) {
-      // forward
-      moveGantry('f');
-      
-      // end
-      moveGantry('e');
+    Serial.print("Starting iteration ");
+    Serial.print(i+1);
+    Serial.print(" of ");
+    Serial.println(c.revolutions);
+    printElapsedTime();
     
-      // reverse
-      moveGantry('r');
-      
-      // end
-      moveGantry('e');
+    // forward
+    Serial.println("Forward");
+    moveGantry('f');
+    
+    // end
+    Serial.println("Pausing at the far end");
+    moveGantry('e');
+    
+    // reverse
+    Serial.println("Reverse");
+    moveGantry('r');
+    
+    // end
+    Serial.println("Pausing at the near end");
+    moveGantry('e');
   }
 
+  Serial.println("job finished.");
+  while(true){};
   /* garbage code
   // step one revolution in one direction:
   Serial.println("clockwise");
