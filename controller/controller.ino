@@ -1,41 +1,41 @@
 /* Stepper Motor Control */
 
-// #include <Stepper.h>
-const int stepsPerRevolution = 90;
-const int timeToCross = 10000; // ms to cross the gantry
-const int timeAtEnd = 2000; // ms to cross the gantry
+#include <AccelStepper.h>
+#define STEPS 200 // steps per revolution
+#define CROSS 2000 // steps to cross the gantry
 
 // change this to fit the number of steps per revolution
 // for your motor
 // initialize the stepper library on pins 8 through 11:
 // create steppers
-// Stepper beltStepper(stepsPerRevolution, 8, 9, 10, 11);
-// Stepper rotateStepper(stepsPerRevolution, 1, 2, 3, 4);
+AccelStepper beltStepper(STEPS, 8, 9, 10, 11);
+AccelStepper rotateStepper(STEPS, 4, 5, 6, 7);
 
 // configuration for the job
 struct Config {
   int beltSpeed;
   int rotateSpeed;
+  int stepsAtEnd; // steps to rotate at the end of the tube
   int revolutions;
 };
 
 Config c = {
-  3,
-  3,
-  100
+  60,
+  60,
+  100,
+  5
 };
 
 // store the state of the gantry in case of pause 
 struct GantryState {
-  int beltSpeed;
-  int rotateSpeed;
-  int duration;
+  char state;
+  int steps;
+  AccelStepper mainStepper; // stepper controlling timing or movement
 };
 
 GantryState gs = {
-  3,
-  3,
-  0
+  'f',
+  CROSS,
 };
 
 int startTime = millis();
@@ -44,7 +44,6 @@ void setup() {
   // TODO: zero the motors
   
   // set the speed at 60 rpm:
-  // myStepper.setSpeed(5);
   // initialize the serial port:
   Serial.begin(9600);
 }
@@ -71,26 +70,31 @@ void driveMotors();
 void altDelay() {
   /** Delay but check for emergency stop
    *  during the downtime
+   *  Wait until given stepper stops moving
    */
-  int endTime = gs.duration + millis();
-  
-  // if stop button pressed, stop!
-  while(millis() < endTime) {
+  while(gs.mainStepper.isRunning()) {
+    // if stop button pressed, stop!
     if(checkEmergencyPause()) {
       // store state
-      gs.duration = endTime - millis();
-
+      gs.steps = gs.mainStepper.distanceToGo();
+      
+      // stop motors
+      beltStepper.stop();
+      rotateStepper.stop();
+      
       // await a restart signal
       while(!checkRestart()) {}
 
-      // redefine end time
-      int endTime = gs.duration + millis();
-      
       // restart motors
       driveMotors();
     }
+
+    if(&gs.mainStepper != &rotateStepper && !rotateStepper.isRunning()) {
+      rotateStepper.move(99999999); // this should always move
+    }
   }
-  gs.duration = 0;
+  rotateStepper.stop();
+  gs.steps = 0;
   return;
 }
 
@@ -100,32 +104,30 @@ void driveMotors() {
    *  TODO: set motor speeds
    */
   // set motor speeds
-  
+  gs.mainStepper.move(gs.steps);
   // delay
   altDelay();
+  // delay(5000);
   return;
 }
 
-void moveGantry(char direction) { 
+void moveGantry() { 
   /** Determine speeds and move gantry in 
    *  the direction of choosing
    */
-  // change gs (GantryState) given direction
-  switch(direction) {
+  // change steps left given direction
+  switch(gs.state) {
     case 'f': // forward
-      gs.beltSpeed = c.beltSpeed;
-      gs.rotateSpeed = c.rotateSpeed;
-      gs.duration = timeToCross;
+      gs.steps = CROSS;
+      gs.mainStepper = beltStepper;
       break;
     case 'r': // reverse
-      gs.beltSpeed = -c.beltSpeed;
-      gs.rotateSpeed = c.rotateSpeed;
-      gs.duration = timeToCross;
+      gs.steps = -CROSS;
+      gs.mainStepper = beltStepper;
       break;
     case 'e': // end
-      gs.beltSpeed = 0;
-      gs.rotateSpeed = c.rotateSpeed;
-      gs.duration = timeAtEnd;
+      gs.steps = c.stepsAtEnd;
+      gs.mainStepper = rotateStepper;
       break;
     default:
       break;
@@ -153,10 +155,12 @@ void printElapsedTime() {
   return;
 }
 
-
 void loop() {
   // Get job details and store speeds
   // getConfig();
+
+  beltStepper.setSpeed(c.beltSpeed);
+  rotateStepper.setSpeed(c.rotateSpeed);
   
   for(int i = 0; i < c.revolutions; i++) {
     Serial.print("Starting iteration ");
@@ -167,31 +171,25 @@ void loop() {
     
     // forward
     Serial.println("Forward");
-    moveGantry('f');
+    gs.state = 'f';
+    moveGantry();
     
     // end
     Serial.println("Pausing at the far end");
-    moveGantry('e');
+    gs.state = 'e';
+    moveGantry();
     
     // reverse
     Serial.println("Reverse");
-    moveGantry('r');
+    gs.state = 'r';
+    moveGantry();
     
     // end
     Serial.println("Pausing at the near end");
-    moveGantry('e');
+    gs.state = 'e';
+    moveGantry();
   }
 
   Serial.println("job finished.");
   while(true){};
-  /* garbage code
-  // step one revolution in one direction:
-  Serial.println("clockwise");
-  myStepper.step(stepsPerRevolution);
-  delay(500);
-  // step one revolution in the other direction:
-  Serial.println("counterclockwise");
-  myStepper.step(-stepsPerRevolution);
-  delay(500);
-   */
 }
