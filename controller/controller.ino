@@ -2,17 +2,23 @@
 
 #include <AccelStepper.h>
 #define STEPS 200 // steps per revolution
-#define CROSS 2000 // steps to cross the gantry
+#define WIDTH 100 // width of final product in mm 
+#define BELT_CIRC 84 // circumference of the roller on the belt
+#define CROSS WIDTH * STEPS / 84 // steps to cross the gantry
+
+// 26.65 mm diameter
+// 26.65 * pi is about 84
 
 // change this to fit the number of steps per revolution
 // for your motor
 // initialize the stepper library on pins 8 through 11:
 // create steppers
-AccelStepper beltStepper(STEPS, 8, 9, 10, 11);
-AccelStepper rotateStepper(STEPS, 4, 5, 6, 7);
+AccelStepper beltStepper(STEPS, 4, 5, 6, 7);
+AccelStepper rotateStepper(STEPS, 8, 9, 10, 11);
 
 // configuration for the job
 struct Config {
+  int pitch; // may add offset
   int beltSpeed;
   int rotateSpeed;
   int stepsAtEnd; // steps to rotate at the end of the tube
@@ -20,6 +26,7 @@ struct Config {
 };
 
 Config c = {
+  100,
   60,
   60,
   100,
@@ -46,6 +53,25 @@ void setup() {
   // set the speed at 60 rpm:
   // initialize the serial port:
   Serial.begin(9600);
+}
+
+void getConfig() {
+  /** Ask Serial for configuration
+   *  of the job
+   */
+
+  Serial.println("Type in the pitch for rolling (mm per revolution)");
+  while(!Serial.available()) {}
+  c.pitch = Serial.parseInt();
+  Serial.println("Type in the number of revolutions");
+  c.revolutions = Serial.parseInt();
+}
+
+void calculateSpeeds() {
+  /** Given current preferences
+   *  calculate speeds for the job
+   */
+  float speedRatio = (float)c.pitch / BELT_CIRC;
 }
 
 bool checkEmergencyPause() {
@@ -103,6 +129,7 @@ void driveMotors() {
    *  to set motor speeds
    *  TODO: set motor speeds
    */
+  
   // set motor speeds
   gs.mainStepper.move(gs.steps);
   // delay
@@ -132,7 +159,8 @@ void moveGantry() {
     default:
       break;
   }
-  
+  Serial.print("Gantry steps ");
+  Serial.println(gs.steps);
   // drive motors at altered gs
   driveMotors();
   
