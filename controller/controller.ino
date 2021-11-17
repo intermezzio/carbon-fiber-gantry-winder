@@ -1,6 +1,7 @@
 /* Stepper Motor Control */
 
 #include <AccelStepper.h>
+#include <MultiStepper.h>
 #define STEPS 200 // steps per revolution
 #define WIDTH 100 // width of final product in mm 
 #define BELT_CIRC 84 // circumference of the roller on the belt
@@ -13,8 +14,10 @@
 // for your motor
 // initialize the stepper library on pins 8 through 11:
 // create steppers
-AccelStepper beltStepper(STEPS, 4, 5, 6, 7);
-AccelStepper rotateStepper(STEPS, 8, 9, 10, 11);
+//Stepper temp(STEPS, 4, 5, 6, 7);
+AccelStepper beltStepper(AccelStepper::FULL4WIRE, 4, 5, 6, 7);
+AccelStepper rotateStepper(AccelStepper::FULL4WIRE, 8, 9, 10, 11);
+MultiStepper steppers;
 
 // configuration for the job
 struct Config {
@@ -22,14 +25,16 @@ struct Config {
   int beltSpeed;
   int rotateSpeed;
   int stepsAtEnd; // steps to rotate at the end of the tube
+  int stepsForWidth;
   int revolutions;
 };
 
 Config c = {
   100,
-  60,
-  60,
   100,
+  100,
+  100,
+  10,
   5
 };
 
@@ -43,12 +48,21 @@ struct GantryState {
 GantryState gs = {
   'f',
   CROSS,
+  beltStepper
 };
+
+long positions[2] = {0, 0};
 
 int startTime = millis();
 
 void setup() {
-  // TODO: zero the motors
+  beltStepper.setMaxSpeed(60);
+  rotateStepper.setMaxSpeed(60);
+  beltStepper.setSpeed(60);
+  rotateStepper.setSpeed(60);
+  
+  steppers.addStepper(beltStepper);
+  steppers.addStepper(rotateStepper);
   
   // set the speed at 60 rpm:
   // initialize the serial port:
@@ -79,6 +93,9 @@ bool checkEmergencyPause() {
    *  return true, else return false
    *  TODO: implement
    */
+  if(Serial.available() && Serial.read() == '0') {
+    return true;
+  }
   return false;
 }
 
@@ -90,20 +107,22 @@ bool checkRestart() {
   return false;
 }
 
-// this is necessary for calling the function later
-void driveMotors();
-
 void altDelay() {
   /** Delay but check for emergency stop
    *  during the downtime
    *  Wait until given stepper stops moving
    */
-  while(gs.mainStepper.isRunning()) {
+  Serial.println("Started delay");
+
+  while(gs.mainStepper.distanceToGo() != 0) {
+    steppers.run();
+    Serial.println(gs.mainStepper.distanceToGo());
+    
     // if stop button pressed, stop!
     if(checkEmergencyPause()) {
       // store state
       gs.steps = gs.mainStepper.distanceToGo();
-      
+
       // stop motors
       beltStepper.stop();
       rotateStepper.stop();
@@ -112,29 +131,15 @@ void altDelay() {
       while(!checkRestart()) {}
 
       // restart motors
-      driveMotors();
+      steppers.moveTo(positions); // TODO: fix?
+      return altDelay();
+      
     }
 
-    if(&gs.mainStepper != &rotateStepper && !rotateStepper.isRunning()) {
-      rotateStepper.move(99999999); // this should always move
-    }
+    
   }
   rotateStepper.stop();
   gs.steps = 0;
-  return;
-}
-
-void driveMotors() {
-  /** Use the global GantryState object
-   *  to set motor speeds
-   *  TODO: set motor speeds
-   */
-  
-  // set motor speeds
-  gs.mainStepper.move(gs.steps);
-  // delay
-  altDelay();
-  // delay(5000);
   return;
 }
 
@@ -147,22 +152,34 @@ void moveGantry() {
     case 'f': // forward
       gs.steps = CROSS;
       gs.mainStepper = beltStepper;
+      positions[0] = CROSS;
+      positions[1] = 99999; // far enough
       break;
     case 'r': // reverse
       gs.steps = -CROSS;
       gs.mainStepper = beltStepper;
+      positions[0] = 0;
+      positions[1] = 99999; // far enough
       break;
     case 'e': // end
       gs.steps = c.stepsAtEnd;
       gs.mainStepper = rotateStepper;
+      rotateStepper.setCurrentPosition(0);
+      positions[1] = c.stepsAtEnd;
       break;
+    case 'b': // beginning (near end)
+      gs.steps = c.stepsAtEnd;
+      gs.mainStepper = rotateStepper;
+      rotateStepper.setCurrentPosition(0);
+      positions[1] = c.stepsAtEnd + c.stepsForWidth;
     default:
       break;
   }
   Serial.print("Gantry steps ");
   Serial.println(gs.steps);
   // drive motors at altered gs
-  driveMotors();
+  steppers.moveTo(positions);
+  altDelay();
   
   return;
 }
@@ -214,10 +231,10 @@ void loop() {
     
     // end
     Serial.println("Pausing at the near end");
-    gs.state = 'e';
+    gs.state = 'b';
     moveGantry();
   }
 
-  Serial.println("job finished.");
+  Serial.println("Job finished.");
   while(true){};
 }
