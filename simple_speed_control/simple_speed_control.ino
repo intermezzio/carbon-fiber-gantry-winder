@@ -15,13 +15,13 @@
 
 // --- ADD CONFIGURATION HERE
 
-#define LENGTH 150. // length of tube in mm
+#define LENGTH 200. // length of tube in mm
 #define RADIUS 19.1 // radius of winding tube in mm
 //#define PITCH 50.1 // pitch of winding in mm, define this or ANGLE
-#define ANGLE 20. // angle in degrees (0-90) of increase (0 degrees is vertical)
-#define THICKNESS 2.2 // thickness of filament in mm
-#define ITERATIONS 5 // number of iterations
-#define MAX_SPEED 150 // maximum stepper speed
+#define ANGLE 25. // angle in degrees (0-90) of increase (0 degrees is vertical)
+#define THICKNESS 0.4 // thickness of filament in mm
+#define ITERATIONS 15 // number of iterations
+#define MAX_SPEED 175 // maximum stepper speed
 
 // --- CONFIGURATION ENDS HERE
 
@@ -179,7 +179,7 @@ void loop() {
   rotateStepper.setCurrentPosition(0);
 
   Serial.println("Near end!!!");
-  positions[1] = HALF_STEPS; // + FULL_CIRCLE_STEPS/2 + AFTER_ITERATION_STEPS;
+  positions[1] = HALF_STEPS + AFTER_ITERATION_STEPS; // + FULL_CIRCLE_STEPS/2 + 
   steppers.moveTo(positions);
   while(rotateStepper.distanceToGo() != 0) {
     Serial.println(rotateStepper.distanceToGo());
