@@ -15,20 +15,25 @@
 
 // --- ADD CONFIGURATION HERE
 
-#define LENGTH 200. // length of tube in mm
+#define LENGTH 100. // length of tube in mm
 #define RADIUS 19.1 // radius of winding tube in mm
 //#define PITCH 50.1 // pitch of winding in mm, define this or ANGLE
-#define ANGLE 25. // angle in degrees (0-90) of increase (0 degrees is vertical)
-#define THICKNESS 0.4 // thickness of filament in mm
-#define ITERATIONS 15 // number of iterations
-#define MAX_SPEED 175 // maximum stepper speed
+#define HELICAL_ANGLE 25. // angle in degrees (0-90) of increase (0 degrees is vertical)
+#define THICKNESS 2.5 // thickness of filament in mm
+//#define ITERATIONS 5 // number of iterations
+#define MAX_SPEED 100 // maximum stepper speed
 
 // --- CONFIGURATION ENDS HERE
 
+#define CIRCUMFERENCE (2*PI*RADIUS)
+float HOOP_ANGLE = atan(THICKNESS / CIRCUMFERENCE) * 180 / PI; // manually divide by 2
 int CROSS = (int)(LENGTH * STEPS / 84); // steps to cross the gantry
+float ANGLE = HOOP_ANGLE;
 #ifndef PITCH
 float PITCH = (PI * tan(ANGLE * PI / 180) * 2 * RADIUS);
 #endif
+
+int ITERATIONS = 10;
 
 AccelStepper beltStepper(AccelStepper::FULL4WIRE,4,5,6,7); // Defaults to AccelStepper::FULL4WIRE (4 pins) on 2, 3, 4, 5
 AccelStepper rotateStepper(AccelStepper::FULL4WIRE,8,9,10,11); // Defaults to AccelStepper::FULL4WIRE (4 pins) on 2, 3, 4, 5
@@ -49,11 +54,6 @@ int AFTER_ITERATION_STEPS; // how many steps to turn to move the carbon fiber ov
 void setup() {  
   calculateConstants();
   
-  beltStepper.setMaxSpeed(BELT_SPEED);
-  beltStepper.setSpeed(BELT_SPEED);	
-  rotateStepper.setMaxSpeed(TUBE_SPEED);
-  rotateStepper.setSpeed(TUBE_SPEED); 
-
   // Then give them to MultiStepper to manage
   steppers.addStepper(beltStepper);
   steppers.addStepper(rotateStepper);
@@ -87,6 +87,12 @@ void setup() {
   Serial.print("TUBE_SPEED ");
   Serial.println(TUBE_SPEED);
 
+  Serial.print("HOOP_ANGLE ");
+  Serial.println(HOOP_ANGLE);
+
+  Serial.print("PITCH ");
+  Serial.println(PITCH);
+  
   delay(1000);
   
   Serial.println("First Roll");
@@ -111,6 +117,8 @@ float fmod(float x, float y) {
 }
 
 void calculateConstants() {
+  PITCH = (PI * tan(ANGLE * PI / 180) * 2 * RADIUS);
+  
   // ratio of speeds of both motors
   SPEED_RATIO = PITCH / BELT_CIRC;
   if(SPEED_RATIO < 1) {
@@ -132,20 +140,41 @@ void calculateConstants() {
 
   // steps to take after lining up the sample
   // to offset the next iteration
-  AFTER_ITERATION_STEPS = (int) (STEPS * THICKNESS / PITCH);
+  AFTER_ITERATION_STEPS = (int) (THICKNESS / cos(PI * HELICAL_ANGLE / 180) * STEPS / (2*PI*RADIUS));
 
+  ITERATIONS = STEPS / AFTER_ITERATION_STEPS + 2;
+  
+  beltStepper.setMaxSpeed(BELT_SPEED);
+  beltStepper.setSpeed(BELT_SPEED);  
+  rotateStepper.setMaxSpeed(TUBE_SPEED);
+  rotateStepper.setSpeed(TUBE_SPEED); 
 }
 
 void loop() {  
-  if(++iteration == ITERATIONS) {
+  iteration++;
+  if(iteration == ITERATIONS-1 || iteration == 1) {
+    ANGLE = HOOP_ANGLE;
+    calculateConstants();
+  } else if(iteration == 2) {
+    ANGLE = HELICAL_ANGLE;
+    calculateConstants();
+  } else if(iteration == ITERATIONS) {
     Serial.println("Job completed");
     beltStepper.stop();
     rotateStepper.stop();
     while(true) {}
   }
+
+  Serial.print("TUBE_SPEED ");
+  Serial.println(TUBE_SPEED);
+
+  Serial.print("BELT_SPEED ");
+  Serial.println(BELT_SPEED);
   
   Serial.print("Iteration ");
-  Serial.println(iteration);
+  Serial.print(iteration);
+  Serial.print(" of ");
+  Serial.println(ITERATIONS);
 
   Serial.println("Forward!!!");
   positions[0] = CROSS;
@@ -159,7 +188,7 @@ void loop() {
   rotateStepper.setCurrentPosition(0);
   
   Serial.println("Far end!!!");
-  positions[1] = HALF_STEPS; // + FULL_CIRCLE_STEPS/2;
+  positions[1] = HALF_STEPS + FULL_CIRCLE_STEPS/2;
   steppers.moveTo(positions);
   while(rotateStepper.distanceToGo() != 0) {
     Serial.println(rotateStepper.distanceToGo());
@@ -179,7 +208,7 @@ void loop() {
   rotateStepper.setCurrentPosition(0);
 
   Serial.println("Near end!!!");
-  positions[1] = HALF_STEPS + AFTER_ITERATION_STEPS; // + FULL_CIRCLE_STEPS/2 + 
+  positions[1] = HALF_STEPS + FULL_CIRCLE_STEPS/2 + AFTER_ITERATION_STEPS; 
   steppers.moveTo(positions);
   while(rotateStepper.distanceToGo() != 0) {
     Serial.println(rotateStepper.distanceToGo());
