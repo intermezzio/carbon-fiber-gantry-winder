@@ -4,12 +4,12 @@
 
 #define STEPS 200 // steps per revolution
 #define BELT_CIRC 84 // circumference of the roller on the belt
-#define HALF_STEPS STEPS / 2 // 180 degrees
+#define HALF_STEPS (STEPS / 2) // 180 degrees
 
 // --- ADD CONFIGURATION HERE
 
 #define LENGTH 100. // length of tube in mm
-#define RADIUS 19.1 // radius of winding tube in mm
+#define RADIUS 16.75 // radius of winding tube in mm
 //#define PITCH 50.1 // pitch of winding in mm, define this or ANGLE
 #define HELICAL_ANGLE 25. // angle in degrees (0-90) of increase (0 degrees is vertical)
 #define THICKNESS 2.5 // thickness of filament in mm
@@ -29,13 +29,15 @@ float PITCH = (PI * tan(ANGLE * PI / 180) * 2 * RADIUS);
 int ITERATIONS = 10;
 
 char buffer[16];
+int PAUSE = 13;
+int RESUME = 13;
 
 AccelStepper beltStepper(AccelStepper::FULL4WIRE,4,5,6,7); // Defaults to AccelStepper::FULL4WIRE (4 pins) on 2, 3, 4, 5
 AccelStepper rotateStepper(AccelStepper::FULL4WIRE,8,9,10,11); // Defaults to AccelStepper::FULL4WIRE (4 pins) on 2, 3, 4, 5
 
 MultiStepper steppers;
 
-LiquidCrystal_I2C lcd(A6,16,2);
+LiquidCrystal_I2C lcd(0x27,16,2);
 
 long positions[2] = {CROSS, 0};
 
@@ -48,6 +50,8 @@ int CROSS_TURN_STEPS; // how many steps to rotate when the belt crosses
 int FULL_CIRCLE_STEPS; // how many steps to rotate after an iteration to line up the rotating motor
 int AFTER_ITERATION_STEPS; // how many steps to turn to move the carbon fiber over for the next iteration
 
+float JANK_CROSS_TUBE_DOPING_MULTIPLIER = 8./7;
+
 const bool BELT = true;
 const bool ROTATE = false;
 
@@ -59,6 +63,9 @@ void setup() {
   steppers.addStepper(beltStepper);
   steppers.addStepper(rotateStepper);
 
+  pinMode(PAUSE, INPUT);
+  pinMode(RESUME, INPUT);
+  
   Serial.begin(9600);
 
   Serial.print(ITERATIONS);
@@ -99,7 +106,15 @@ void setup() {
   Serial.println("First Roll");
   lcd.backlight();
   lcd.setCursor(0,0);
-  lcd.print("First roll")
+  lcd.print("  1/");
+  lcd.setCursor(4,0);
+  printNumSpace(ITERATIONS,3);
+  lcd.print("it ");
+  lcd.print("end");
+  
+  lcd.setCursor(5,1);
+  lcd.print("steps left");
+  
   
   positions[0] = 0;
   positions[1] = STEPS;
@@ -122,17 +137,20 @@ float fmod(float x, float y) {
 }
 
 void printLcdSteps(long steps) {
+  lcd.setCursor(0,1);
+  printNumSpace(steps, 4);
+}
+
+void printNumSpace(long num, int size) {
   int len = 1;
-  long temp = steps;
-  while ( steps /= 10 ) {
+  long temp = num;
+  while ( temp /= 10 ) {
     len++;
   }
-  lcd.setCursor(1,0);
-  for(int i = 0; i < 4-len; i++) {
+  for(int i = 0; i < size-len; i++) {
     lcd.print(" ");
   }
-  lcd.print(steps);
-  return;
+  lcd.print(num);
 }
 
 void calculateConstants() {
@@ -149,7 +167,7 @@ void calculateConstants() {
   }
   
   // steps rotation motor takes when belt motor crosses
-  CROSS_TURN_STEPS = (int) (CROSS / SPEED_RATIO);
+  CROSS_TURN_STEPS = (int) (CROSS / SPEED_RATIO * JANK_CROSS_TUBE_DOPING_MULTIPLIER);
 
   // steps to take after one iteration
   // to line up the sample again
@@ -169,6 +187,13 @@ void calculateConstants() {
   rotateStepper.setSpeed(TUBE_SPEED); 
 }
 
+bool pause() {
+  return digitalRead(PAUSE);
+}
+bool resume() {
+  return digitalRead(RESUME);
+}
+
 long statusChecks(bool printBelt) {
   /** Check if a pause was requested
    * Print to Serial (and LCD)
@@ -176,18 +201,20 @@ long statusChecks(bool printBelt) {
   long beltStepsToGo = beltStepper.distanceToGo();
   long rotateStepsToGo = rotateStepper.distanceToGo();
   
-  bool pause = false; // TODO: pause button implementation
-  if(pause) {
+  // check for pause
+  if(pause()) {
     Serial.println("Pause!");
     beltStepper.stop();
     rotateStepper.stop();
     
     delay(1000);
-    bool resume = false; // TODO: resume button implementation
-    while(!resume) {}
+    // check for resume
+    while(!resume()) {}
     
     Serial.println("Resume!");
-    long tempPositions = {beltStepsToGo, rotateStepsToGo};
+    delay(1000);
+    
+    long tempPositions[2] = {positions[0], positions[1]};
     steppers.moveTo(tempPositions);
     
   }
@@ -223,7 +250,12 @@ void loop() {
   Serial.print(" of ");
   Serial.println(ITERATIONS);
 
+  lcd.setCursor(0,0);
+  printNumSpace(iteration, 3);
+  
   Serial.println("Forward!!!");
+  lcd.setCursor(10,0);
+  lcd.print("fwd");
   positions[0] = CROSS;
   positions[1] = CROSS_TURN_STEPS;
 
@@ -234,7 +266,9 @@ void loop() {
   rotateStepper.setCurrentPosition(0);
   
   Serial.println("Far end!!!");
-  positions[1] = HALF_STEPS + FULL_CIRCLE_STEPS/2;
+  lcd.setCursor(10,0);
+  lcd.print("end");
+  positions[1] = STEPS + HALF_STEPS + FULL_CIRCLE_STEPS/2;
   steppers.moveTo(positions);
   while(statusChecks(ROTATE) != 0) {
     steppers.run();
@@ -242,6 +276,8 @@ void loop() {
   rotateStepper.setCurrentPosition(0);
   
   Serial.println("Reverse!!!");
+  lcd.setCursor(10,0);
+  lcd.print("rev");
   positions[0] = 0;
   positions[1] = CROSS_TURN_STEPS;
   
@@ -252,7 +288,9 @@ void loop() {
   rotateStepper.setCurrentPosition(0);
 
   Serial.println("Near end!!!");
-  positions[1] = HALF_STEPS + FULL_CIRCLE_STEPS/2 + AFTER_ITERATION_STEPS; 
+  lcd.setCursor(10,0);
+  lcd.print("end");
+  positions[1] = STEPS + HALF_STEPS + FULL_CIRCLE_STEPS/2 + AFTER_ITERATION_STEPS; 
   steppers.moveTo(positions);
   while(statusChecks(ROTATE) != 0) {
     steppers.run();
