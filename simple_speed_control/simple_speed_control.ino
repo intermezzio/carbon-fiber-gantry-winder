@@ -179,7 +179,7 @@ void calculateConstants() {
   // to offset the next iteration
   AFTER_ITERATION_STEPS = (int) (THICKNESS / cos(PI * HELICAL_ANGLE / 180) * STEPS / (2*PI*RADIUS));
 
-  ITERATIONS = STEPS / AFTER_ITERATION_STEPS + 2;
+  ITERATIONS = STEPS / AFTER_ITERATION_STEPS + 1;
   
   beltStepper.setMaxSpeed(BELT_SPEED);
   beltStepper.setSpeed(BELT_SPEED);  
@@ -226,7 +226,7 @@ long statusChecks(bool printBelt) {
 
 void loop() {  
   iteration++;
-  if(iteration == ITERATIONS-1 || iteration == 1) {
+  if(iteration == 1) {
     ANGLE = HOOP_ANGLE;
     calculateConstants();
   } else if(iteration == 2) {
